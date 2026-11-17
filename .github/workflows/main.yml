@@ -34,18 +34,15 @@ jobs:
       - name: Prepare Capacitor
         run: |
           npm init -y
+
           npm install @capacitor/core@6 @capacitor/android@6
-          npm install --save-dev @capacitor/cli@6
+          npm install --save-dev @capacitor/cli@6 @capacitor/assets sharp
 
           mkdir -p www
 
           cp index.html www/
           cp manifest.json www/
           cp service-worker.js www/
-
-          if [ -d icons ]; then
-            cp -R icons www/
-          fi
 
           cat > capacitor.config.json <<'EOF'
           {
@@ -56,6 +53,13 @@ jobs:
           EOF
 
           npx cap add android
+
+          mkdir -p resources
+
+          node -e "require('sharp')('app-icon-256.png').resize(1024,1024).png().toFile('resources/icon.png')"
+
+          npx capacitor-assets generate --android
+
           npx cap sync android
 
       - name: Build APK
