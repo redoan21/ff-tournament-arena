@@ -7,6 +7,13 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
+concurrency:
+  group: ff-tournament-arena-build
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,6 +40,8 @@ jobs:
 
       - name: Prepare Capacitor
         run: |
+          set -e
+
           npm init -y
           npm install @capacitor/core@6 @capacitor/android@6
           npm install --save-dev @capacitor/cli@6 @capacitor/assets sharp
@@ -53,6 +62,7 @@ jobs:
           npx cap add android
 
           mkdir -p resources
+
           node -e "require('sharp')('app-icon-256.png').resize(1024,1024).png().toFile('resources/icon.png')"
 
           npx capacitor-assets generate --android
@@ -97,12 +107,14 @@ jobs:
               raise SystemExit("Signing config already exists")
 
           marker = "    buildTypes {"
+
           if marker not in s:
               raise SystemExit("Could not find buildTypes")
 
           s = s.replace(marker, signing + marker, 1)
 
           pattern = r"(buildTypes\s*\{\s*release\s*\{)"
+
           s, count = re.subn(
               pattern,
               r"\1\n            signingConfig signingConfigs.release",
@@ -121,17 +133,39 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
+          set -e
+
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
 
       - name: Rename APK
         run: |
+          set -e
+
           cp android/app/build/outputs/apk/release/app-release.apk FF-Tournament-Arena.apk
 
-      - name: Upload APK
+          test -s FF-Tournament-Arena.apk
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: FF-Tournament-Arena-Release
           path: FF-Tournament-Arena.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: FF Tournament Arena v1.0.0
+          body: |
+            First official release of FF Tournament Arena Android App.
+          files: FF-Tournament-Arena.apk
+          overwrite_files: true
+          make_latest: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
           
