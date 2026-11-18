@@ -64,10 +64,19 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
+          set -e
+
+          test -n "$KEYSTORE_BASE64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEYSTORE_ALIAS"
+
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/ff-tournament-release.jks
+
+          test -s android/app/ff-tournament-release.jks
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path("android/app/build.gradle")
           s = p.read_text()
@@ -93,23 +102,24 @@ jobs:
 
           s = s.replace(marker, signing + marker, 1)
 
-          build_types_pos = s.index(marker)
-          release_pos = s.find("release {", build_types_pos)
-
-          if release_pos == -1:
-              raise SystemExit("Could not find release build type")
-
-          insert_pos = release_pos + len("release {")
-          s = (
-              s[:insert_pos]
-              + "\n            signingConfig signingConfigs.release"
-              + s[insert_pos:]
+          pattern = r"(buildTypes\s*\{\s*release\s*\{)"
+          s, count = re.subn(
+              pattern,
+              r"\1\n            signingConfig signingConfigs.release",
+              s,
+              count=1
           )
+
+          if count != 1:
+              raise SystemExit("Could not find release build type")
 
           p.write_text(s)
           PY
 
       - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
           cd android
           chmod +x gradlew
