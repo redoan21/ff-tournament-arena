@@ -3868,7 +3868,12 @@ window.loadResults = async function(){
 
 
 auth.onAuthStateChanged(async(user)=>{
-  if(!user) return;
+  if(!user){
+    window.show("login");
+    return;
+  }
+
+  window.show("home");
 
   try{
     const userRef = doc(db,"users",user.uid);
