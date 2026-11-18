@@ -1,3 +1,4 @@
+
 name: Build FF Tournament Arena APK
 
 on:
@@ -83,18 +84,26 @@ jobs:
 
           """
 
-          if "    buildTypes {" not in s:
-              raise SystemExit("Could not find buildTypes in app/build.gradle")
+          if "signingConfigs {" in s:
+              raise SystemExit("Signing config already exists")
 
-          s = s.replace("    buildTypes {", signing + "    buildTypes {", 1)
+          marker = "    buildTypes {"
+          if marker not in s:
+              raise SystemExit("Could not find buildTypes")
 
-          if "        release {" not in s:
+          s = s.replace(marker, signing + marker, 1)
+
+          build_types_pos = s.index(marker)
+          release_pos = s.find("release {", build_types_pos)
+
+          if release_pos == -1:
               raise SystemExit("Could not find release build type")
 
-          s = s.replace(
-              "        release {",
-              "        release {\n            signingConfig signingConfigs.release",
-              1
+          insert_pos = release_pos + len("release {")
+          s = (
+              s[:insert_pos]
+              + "\n            signingConfig signingConfigs.release"
+              + s[insert_pos:]
           )
 
           p.write_text(s)
@@ -115,3 +124,4 @@ jobs:
         with:
           name: FF-Tournament-Arena-Release
           path: FF-Tournament-Arena.apk
+          
