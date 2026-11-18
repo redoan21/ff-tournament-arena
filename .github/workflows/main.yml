@@ -1,4 +1,3 @@
-
 name: Build FF Tournament Arena APK
 
 on:
@@ -34,12 +33,10 @@ jobs:
       - name: Prepare Capacitor
         run: |
           npm init -y
-
           npm install @capacitor/core@6 @capacitor/android@6
           npm install --save-dev @capacitor/cli@6 @capacitor/assets sharp
 
           mkdir -p www
-
           cp index.html www/
           cp manifest.json www/
           cp service-worker.js www/
@@ -55,26 +52,66 @@ jobs:
           npx cap add android
 
           mkdir -p resources
-
           node -e "require('sharp')('app-icon-256.png').resize(1024,1024).png().toFile('resources/icon.png')"
 
           npx capacitor-assets generate --android
-
           npx cap sync android
 
-      - name: Build APK
+      - name: Setup Release Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/ff-tournament-release.jks
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/build.gradle")
+          s = p.read_text()
+
+          signing = """
+              signingConfigs {
+                  release {
+                      storeFile file("ff-tournament-release.jks")
+                      storePassword System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias System.getenv("KEYSTORE_ALIAS")
+                      keyPassword System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+
+          """
+
+          if "    buildTypes {" not in s:
+              raise SystemExit("Could not find buildTypes in app/build.gradle")
+
+          s = s.replace("    buildTypes {", signing + "    buildTypes {", 1)
+
+          if "        release {" not in s:
+              raise SystemExit("Could not find release build type")
+
+          s = s.replace(
+              "        release {",
+              "        release {\n            signingConfig signingConfigs.release",
+              1
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Build Release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Rename APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk FF-Tournament-Arena.apk
+          cp android/app/build/outputs/apk/release/app-release.apk FF-Tournament-Arena.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FF-Tournament-Arena
+          name: FF-Tournament-Arena-Release
           path: FF-Tournament-Arena.apk
-          
