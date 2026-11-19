@@ -2298,6 +2298,15 @@ window.addEventListener("load", async () => {
 
 });
 window.show = function(id){
+    if (
+    !window.__handlingBack &&
+    window.__currentScreen &&
+    window.__currentScreen !== id
+  ) {
+    window.__screenHistory.push(window.__currentScreen);
+  }
+
+  window.__currentScreen = id;
   document.querySelectorAll(".screen").forEach(s=>s.style.display="none");
   
   const screen = document.getElementById(id);
@@ -2347,6 +2356,29 @@ if(nav){
   window.loadTransactionHistory();
   }
 };
+window.__screenHistory = window.__screenHistory || [];
+window.__currentScreen = window.__currentScreen || null;
+
+window.addEventListener("nativeBackButton", async function() {
+  const current = window.__currentScreen || "home";
+
+  if (current === "home" || current === "login") {
+    const exit = await window.showAppConfirm(
+      "Exit App",
+      "Are you sure you want to exit?"
+    );
+
+    if (exit && window.NativeApp) {
+      window.NativeApp.exitApp();
+    }
+    return;
+  }
+
+  const previous = window.__screenHistory.pop() || "home";
+  window.__handlingBack = true;
+  window.show(previous);
+  window.__handlingBack = false;
+});
 window.loadTopPlayers = async function() {
   const box = document.getElementById("topPlayersList");
   if (!box) return;
