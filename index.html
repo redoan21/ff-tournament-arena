@@ -2287,10 +2287,31 @@ window.hideSplashScreen = function() {
     splash.style.display = "none";
   }, 500);
 };
+const CURRENT_APP_VERSION = 2;
 
+async function checkForAppUpdate() {
+  if (!window.NativeApp || !window.NativeApp.downloadUpdate) return;
+
+  try {
+    const response = await fetch(
+      "https://redoan21.github.io/ff-tournament-arena/version.json?time=" + Date.now()
+    );
+
+    const latest = await response.json();
+
+    if (Number(latest.versionCode) > CURRENT_APP_VERSION) {
+      if (confirm("New update available: " + latest.versionName + "\nDownload now?")) {
+        window.NativeApp.downloadUpdate(latest.apkUrl);
+      }
+    }
+  } catch (error) {
+    console.log("Update check failed:", error);
+  }
+}
 window.addEventListener("load", async () => {
 
   await window.loadAppLogo();
+  checkForAppUpdate();
 
   setTimeout(() => {
     window.hideSplashScreen();
