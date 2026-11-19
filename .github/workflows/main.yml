@@ -60,6 +60,41 @@ jobs:
           EOF
 
           npx cap add android
+                    mkdir -p android/app/src/main/java/com/redoan21/ffarena
+
+          cat > android/app/src/main/java/com/redoan21/ffarena/MainActivity.java <<'EOF'
+          package com.redoan21.ffarena;
+
+          import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  getBridge().getWebView().addJavascriptInterface(new Object() {
+                      @JavascriptInterface
+                      public void exitApp() {
+                          runOnUiThread(() -> finish());
+                      }
+                  }, "NativeApp");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      getBridge().getWebView().evaluateJavascript(
+                          "window.dispatchEvent(new Event('nativeBackButton'));",
+                          null
+                      );
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
 
           mkdir -p resources
 
