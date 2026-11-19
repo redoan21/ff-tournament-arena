@@ -282,7 +282,7 @@ downloadId[0] = manager.enqueue(request);
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.1.0
-name: FF Tournament Arena v1.1.0
+          name: FF Tournament Arena v1.1.0
           body: |
             First official release of FF Tournament Arena Android App.
           files: FF-Tournament-Arena.apk
