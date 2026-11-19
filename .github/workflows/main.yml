@@ -60,6 +60,25 @@ jobs:
           EOF
 
           npx cap add android
+                    # Set Android app version
+          sed -i 's/versionCode 1/versionCode 2/' android/app/build.gradle
+          sed -i 's/versionName "1.0"/versionName "1.1"/' android/app/build.gradle
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          source = manifest.read_text()
+          permission = '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
+
+          if permission not in source:
+              match = re.search(r"<manifest\b[^>]*>", source)
+              if match is None:
+                  raise SystemExit("Manifest tag not found")
+              source = source[:match.end()] + "\n" + permission + source[match.end():]
+              manifest.write_text(source)
+          PY
                     mkdir -p android/app/src/main/java/com/redoan21/ffarena
 
           cat > android/app/src/main/java/com/redoan21/ffarena/MainActivity.java <<'EOF'
@@ -68,6 +87,16 @@ jobs:
           import android.os.Bundle;
           import android.webkit.JavascriptInterface;
           import com.getcapacitor.BridgeActivity;
+          import android.app.DownloadManager;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.IntentFilter;
+          import android.net.Uri;
+          import android.os.Environment;
+          import android.os.Build;
+          import android.provider.Settings;
+          import android.content.pm.PackageManager;
 
           public class MainActivity extends BridgeActivity {
               @Override
@@ -75,6 +104,65 @@ jobs:
                   super.onCreate(savedInstanceState);
 
                   getBridge().getWebView().addJavascriptInterface(new Object() {
+                  @JavascriptInterface
+public void downloadUpdate(String apkUrl) {
+    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(apkUrl));
+    request.setTitle("FF Tournament Arena Update");
+    request.setDescription("Downloading update...");
+    request.setNotificationVisibility(
+        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+    );
+    request.setDestinationInExternalFilesDir(
+        MainActivity.this,
+        Environment.DIRECTORY_DOWNLOADS,
+        "FF-Tournament-Arena.apk"
+    );
+
+    DownloadManager manager =
+        (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+final long[] downloadId = new long[1];
+
+BroadcastReceiver receiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        long completedId = intent.getLongExtra(
+            DownloadManager.EXTRA_DOWNLOAD_ID, -1
+        );
+
+        if (completedId == downloadId[0]) {
+            Uri apkUri = manager.getUriForDownloadedFile(completedId);
+
+            if (apkUri != null) {
+                Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                installIntent.setDataAndType(
+                    apkUri,
+                    "application/vnd.android.package-archive"
+                );
+                installIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK |
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+                startActivity(installIntent);
+            }
+
+            unregisterReceiver(this);
+        }
+    }
+};
+
+IntentFilter filter = new IntentFilter(
+    DownloadManager.ACTION_DOWNLOAD_COMPLETE
+);
+
+if (Build.VERSION.SDK_INT >= 33) {
+    registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+} else {
+    registerReceiver(receiver, filter);
+}
+
+downloadId[0] = manager.enqueue(request);
+
+}
                       @JavascriptInterface
                       public void exitApp() {
                           runOnUiThread(() -> finish());
@@ -193,8 +281,8 @@ jobs:
       - name: Publish APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: FF Tournament Arena v1.0.0
+          tag_name: v1.1.0
+name: FF Tournament Arena v1.1.0
           body: |
             First official release of FF Tournament Arena Android App.
           files: FF-Tournament-Arena.apk
