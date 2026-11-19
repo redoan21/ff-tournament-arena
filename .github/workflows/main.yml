@@ -60,33 +60,61 @@ jobs:
           EOF
 
           npx cap add android
-                    # Set Android app version
-          sed -i 's/versionCode 1/versionCode 2/' android/app/build.gradle
-          sed -i "s/versionName '1.0'/versionName '1.1'/" android/app/build.gradle
 
+          # Set Android app version
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          source = manifest.read_text()
-          permission = '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
+          p = Path("android/app/build.gradle")
+          s = p.read_text()
 
-          if permission not in source:
-              match = re.search(r"<manifest\b[^>]*>", source)
-              if match is None:
-                  raise SystemExit("Manifest tag not found")
-              source = source[:match.end()] + "\n" + permission + source[match.end():]
-              manifest.write_text(source)
+          s, count1 = re.subn(
+              r'versionCode\s+\d+',
+              'versionCode 2',
+              s,
+              count=1
+          )
+
+          s, count2 = re.subn(
+              r"""versionName\s+['"][^'"]+['"]""",
+              """versionName '1.1'""",
+              s,
+              count=1
+          )
+
+          if count1 != 1 or count2 != 1:
+              raise SystemExit("Could not update Android version")
+
+          p.write_text(s)
           PY
-                    mkdir -p android/app/src/main/java/com/redoan21/ffarena
+
+          # Add install permission
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+
+          permission = '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
+
+          if permission not in s:
+              match = re.search(r"<manifest\b[^>]*>", s)
+              if not match:
+                  raise SystemExit("Manifest tag not found")
+              s = s[:match.end()] + "\n    " + permission + s[match.end():]
+              p.write_text(s)
+          PY
+
+          mkdir -p android/app/src/main/java/com/redoan21/ffarena
 
           cat > android/app/src/main/java/com/redoan21/ffarena/MainActivity.java <<'EOF'
           package com.redoan21.ffarena;
 
           import android.os.Bundle;
+          import android.os.Build;
           import android.webkit.JavascriptInterface;
-          import com.getcapacitor.BridgeActivity;
           import android.app.DownloadManager;
           import android.content.BroadcastReceiver;
           import android.content.Context;
@@ -94,102 +122,156 @@ jobs:
           import android.content.IntentFilter;
           import android.net.Uri;
           import android.os.Environment;
-          import android.os.Build;
           import android.provider.Settings;
-          import android.content.pm.PackageManager;
+
+          import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
+
+              private Uri pendingApkUri;
+
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  getBridge().getWebView().addJavascriptInterface(new Object() {
-                  @JavascriptInterface
-public void downloadUpdate(String apkUrl) {
-    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(apkUrl));
-    request.setTitle("FF Tournament Arena Update");
-    request.setDescription("Downloading update...");
-    request.setNotificationVisibility(
-        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-    );
-    request.setDestinationInExternalFilesDir(
-        MainActivity.this,
-        Environment.DIRECTORY_DOWNLOADS,
-        "FF-Tournament-Arena.apk"
-    );
+                  getBridge().getWebView().addJavascriptInterface(
+                      new Object() {
 
-    DownloadManager manager =
-        (DownloadManager) MainActivity.this.getSystemService(Context.DOWNLOAD_SERVICE);
-final long[] downloadId = new long[1];
+                          @JavascriptInterface
+                          public void downloadUpdate(String apkUrl) {
+                              runOnUiThread(() -> startApkDownload(apkUrl));
+                          }
 
-BroadcastReceiver receiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        long completedId = intent.getLongExtra(
-            DownloadManager.EXTRA_DOWNLOAD_ID, -1
-        );
+                          @JavascriptInterface
+                          public void exitApp() {
+                              runOnUiThread(() -> finish());
+                          }
 
-        if (completedId == downloadId[0]) {
-            Uri apkUri = manager.getUriForDownloadedFile(completedId);
+                      },
+                      "NativeApp"
+                  );
+              }
 
-            if (apkUri != null) {
-                Intent installIntent = new Intent(Intent.ACTION_VIEW);
-                installIntent.setDataAndType(
-                    apkUri,
-                    "application/vnd.android.package-archive"
-                );
-                installIntent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK |
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                );
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-    !MainActivity.this.getPackageManager().canRequestPackageInstalls()
+              private void startApkDownload(String apkUrl) {
+                  try {
+                      DownloadManager.Request request =
+                          new DownloadManager.Request(Uri.parse(apkUrl));
 
-    Intent settingsIntent = new Intent(
-        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-        Uri.parse("package:" + MainActivity.this.getPackageName())
-    );
+                      request.setTitle("FF Tournament Arena Update");
+                      request.setDescription("Downloading update...");
+                      request.setNotificationVisibility(
+                          DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                      );
 
-    settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-    MainActivity.this.startActivity(installIntent);
+                      request.setDestinationInExternalFilesDir(
+                          this,
+                          Environment.DIRECTORY_DOWNLOADS,
+                          "FF-Tournament-Arena.apk"
+                      );
 
-} else {
-    MainActivity.this.startActivity(settingsIntent);
-}
-            }
+                      DownloadManager manager =
+                          (DownloadManager) getSystemService(
+                              Context.DOWNLOAD_SERVICE
+                          );
 
-            unregisterReceiver(this);
-        }
-    }
-};
+                      final long[] downloadId = new long[1];
 
-IntentFilter filter = new IntentFilter(
-    DownloadManager.ACTION_DOWNLOAD_COMPLETE
-);
+                      BroadcastReceiver receiver = new BroadcastReceiver() {
+                          @Override
+                          public void onReceive(
+                              Context context,
+                              Intent intent
+                          ) {
+                              long completedId = intent.getLongExtra(
+                                  DownloadManager.EXTRA_DOWNLOAD_ID,
+                                  -1
+                              );
 
-if (Build.VERSION.SDK_INT >= 33) {
-    registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-} else {
-    registerReceiver(receiver, filter);
-}
+                              if (completedId == downloadId[0]) {
+                                  Uri apkUri =
+                                      manager.getUriForDownloadedFile(completedId);
 
-downloadId[0] = manager.enqueue(request);
+                                  if (apkUri != null) {
+                                      pendingApkUri = apkUri;
+                                      openInstallerOrPermission();
+                                  }
 
-}
-                      @JavascriptInterface
-                      public void exitApp() {
-                          runOnUiThread(() -> finish());
+                                  unregisterReceiver(this);
+                              }
+                          }
+                      };
+
+                      IntentFilter filter = new IntentFilter(
+                          DownloadManager.ACTION_DOWNLOAD_COMPLETE
+                      );
+
+                      if (Build.VERSION.SDK_INT >= 33) {
+                          registerReceiver(
+                              receiver,
+                              filter,
+                              Context.RECEIVER_NOT_EXPORTED
+                          );
+                      } else {
+                          registerReceiver(receiver, filter);
                       }
-                  }, "NativeApp");
+
+                      downloadId[0] = manager.enqueue(request);
+
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  }
+              }
+
+              private void openInstallerOrPermission() {
+                  if (pendingApkUri == null) return;
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                      !getPackageManager().canRequestPackageInstalls()) {
+
+                      Intent settingsIntent = new Intent(
+                          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                          Uri.parse("package:" + getPackageName())
+                      );
+
+                      startActivity(settingsIntent);
+                      return;
+                  }
+
+                  Intent installIntent = new Intent(Intent.ACTION_VIEW);
+
+                  installIntent.setDataAndType(
+                      pendingApkUri,
+                      "application/vnd.android.package-archive"
+                  );
+
+                  installIntent.addFlags(
+                      Intent.FLAG_ACTIVITY_NEW_TASK |
+                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                  );
+
+                  startActivity(installIntent);
+                  pendingApkUri = null;
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+
+                  if (pendingApkUri != null) {
+                      openInstallerOrPermission();
+                  }
               }
 
               @Override
               public void onBackPressed() {
-                  if (getBridge() != null && getBridge().getWebView() != null) {
+                  if (getBridge() != null &&
+                      getBridge().getWebView() != null) {
+
                       getBridge().getWebView().evaluateJavascript(
                           "window.dispatchEvent(new Event('nativeBackButton'));",
                           null
                       );
+
                   } else {
                       super.onBackPressed();
                   }
@@ -280,7 +362,6 @@ downloadId[0] = manager.enqueue(request);
           set -e
 
           cp android/app/build/outputs/apk/release/app-release.apk FF-Tournament-Arena.apk
-
           test -s FF-Tournament-Arena.apk
 
       - name: Upload APK Artifact
@@ -297,7 +378,7 @@ downloadId[0] = manager.enqueue(request);
           tag_name: v1.1.0
           name: FF Tournament Arena v1.1.0
           body: |
-            First official release of FF Tournament Arena Android App.
+            FF Tournament Arena Android App v1.1.0
           files: FF-Tournament-Arena.apk
           overwrite_files: true
           make_latest: true
