@@ -62,7 +62,7 @@ jobs:
           npx cap add android
                     # Set Android app version
           sed -i 's/versionCode 1/versionCode 2/' android/app/build.gradle
-          sed -i 's/versionName "1.0"/versionName "1.1"/' android/app/build.gradle
+          sed -i "s/versionName '1.0'/versionName '1.1'/" android/app/build.gradle
 
           python3 - <<'PY'
           from pathlib import Path
@@ -119,7 +119,7 @@ public void downloadUpdate(String apkUrl) {
     );
 
     DownloadManager manager =
-        (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        (DownloadManager) MainActivity.this.getSystemService(Context.DOWNLOAD_SERVICE);
 final long[] downloadId = new long[1];
 
 BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -142,7 +142,20 @@ BroadcastReceiver receiver = new BroadcastReceiver() {
                     Intent.FLAG_ACTIVITY_NEW_TASK |
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 );
-                startActivity(installIntent);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+    !getPackageManager().canRequestPackageInstalls()) {
+
+    Intent settingsIntent = new Intent(
+        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+        Uri.parse("package:" + getPackageName())
+    );
+
+    settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    startActivity(settingsIntent);
+
+} else {
+    startActivity(installIntent);
+}
             }
 
             unregisterReceiver(this);
